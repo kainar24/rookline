@@ -49,14 +49,13 @@ npm run test:all
 
 `vite.config.ts` использует `base: './'`, поэтому сборка работает и в корне домена, и в подпапке `/<repo>/`. Stockfish лежит рядом (`dist/engine/`) и грузится с того же адреса: кросс-доменный воркер браузер бы заблокировал. Однопоточной lite-сборке не нужны заголовки COOP/COEP, поэтому GitHub Pages подходит без настроек.
 
-Опубликовать новую версию:
+Публикация автоматическая: при каждом push в `main` GitHub Actions (`.github/workflows/pages.yml`) ставит зависимости, гоняет юнит-тесты и тесты на движке, собирает `dist/` и выкладывает его на Pages. Ход сборки виден во вкладке Actions репозитория.
 
 ```bash
-bash deploy-site.sh          # тесты → сборка → push main → dist/ в ветку gh-pages
-bash deploy-site.sh --build-only
+bash deploy-site.sh   # локальные тесты → git push origin main → Actions публикует сайт
 ```
 
-Скрипт собирает сайт локально и кладёт `dist/` (с `.nojekyll`) в ветку `gh-pages`; Pages включены на эту ветку. GitHub Actions не используются, так что токену не нужен scope `workflow`. Вручную: `npm run build` и выложить содержимое `dist/` на любой статический хостинг (сервер должен отдавать `.wasm` как `application/wasm`).
+Вручную без GitHub: `npm run build` и выложить содержимое `dist/` на любой статический хостинг (сервер должен отдавать `.wasm` как `application/wasm`).
 
 ## Claude API (необязательно)
 
