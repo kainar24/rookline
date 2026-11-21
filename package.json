@@ -1,0 +1,29 @@
+{
+  "name": "chess-review",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "scripts": {
+    "postinstall": "node scripts/copy-engine.mjs",
+    "predev": "node scripts/copy-engine.mjs",
+    "dev": "vite",
+    "prebuild": "node scripts/copy-engine.mjs",
+    "build": "tsc --noEmit && vite build",
+    "preview": "vite preview",
+    "test": "vitest run",
+    "test:engine": "vitest run --config vitest.engine.config.ts",
+    "test:all": "vitest run && vitest run --config vitest.engine.config.ts"
+  },
+  "dependencies": {
+    "chess.js": "^1.4.0"
+  },
+  "devDependencies": {
+    "@types/node": "^26.6.6",
+    "fake-indexeddb": "^6.2.8",
+    "stockfish": "^19.0.1",
+    "typescript": "5.9",
+    "vite": "^8.3.8",
+    "vitest": "^5.1.1"
+  },
+  "license": "GPL-3.0-or-later"
+}
