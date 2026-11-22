@@ -242,7 +242,10 @@ export class ReportView {
           ? t('coachSummaryW', { a: aw.toFixed(1), b: ab.toFixed(1) })
           : t('coachSummaryB', { a: ab.toFixed(1), b: aw.toFixed(1) });
     this.panelBody.append(
-      this.bubble([h('p', { class: 'bubble-text' }, `${line} ${t('coachKeyCount', { n: this.keyPlies.length })}`)]),
+      this.bubble([
+        h('p', { class: 'bubble-text' }, `${line} ${t('coachKeyCount', { n: this.keyPlies.length })}`),
+        r.opening ? h('p', { class: 'sum-opening' }, r.opening) : null,
+      ]),
       h('div', { class: 'panel-chart' }, this.chart.el),
     );
 
@@ -252,12 +255,30 @@ export class ReportView {
       h('div', { class: 'sum-player' }, avatar(color, 44), h('span', null, color === 'w' ? hd.white : hd.black));
     const accBox = (v: number | null, color: 'w' | 'b') => h('div', { class: `acc-box acc-${color}` }, v === null ? '—' : v.toFixed(1));
 
+    const ratingBox = (v: number | null) =>
+      h('div', { class: 'rating-box', title: t('gameRatingHint') }, v === null ? '—' : `≈${v}`);
+    const phaseCell = (v: number | null) =>
+      v === null
+        ? h('div', { class: 'phase-cell muted' }, '—')
+        : h(
+            'div',
+            { class: `phase-cell cat-text-${phaseCategory(v)}`, title: t('phaseHint', { a: v.toFixed(1) }) },
+            categoryIcon(phaseCategory(v), 22),
+            h('span', { class: 'phase-acc' }, v.toFixed(0)),
+          );
+
+    // Headline numbers first (accuracy, game rating, phases) so they are visible without scrolling.
     const table = h('div', { class: 'sum-table' });
     table.append(
       row(t('players'), playerCell('w'), playerCell('b'), 'players'),
       row(t('accuracy'), accBox(r.accuracy.w, 'w'), accBox(r.accuracy.b, 'b'), 'acc'),
-      h('div', { class: 'sum-sep' }),
+      row(t('gameRating'), ratingBox(r.gameRating.w), ratingBox(r.gameRating.b), 'rating'),
     );
+    for (const ph of PHASES) {
+      if (r.phases[ph].w === null && r.phases[ph].b === null) continue;
+      table.append(row(t(`phase_${ph}` as Key), phaseCell(r.phases[ph].w), phaseCell(r.phases[ph].b), 'phase'));
+    }
+    table.append(h('div', { class: 'sum-sep' }));
     for (const c of CATEGORIES) {
       table.append(
         h(
@@ -270,32 +291,10 @@ export class ReportView {
         ),
       );
     }
-    const ratingBox = (v: number | null) =>
-      h('div', { class: 'rating-box', title: t('gameRatingHint') }, v === null ? '—' : `≈${v}`);
-    const phaseCell = (v: number | null) =>
-      v === null
-        ? h('div', { class: 'phase-cell muted' }, '—')
-        : h(
-            'div',
-            { class: `phase-cell cat-text-${phaseCategory(v)}`, title: t('phaseHint', { a: v.toFixed(1) }) },
-            categoryIcon(phaseCategory(v), 22),
-            h('span', { class: 'phase-acc' }, v.toFixed(0)),
-          );
-    table.append(
-      h('div', { class: 'sum-sep' }),
-      row(t('gameRating'), ratingBox(r.gameRating.w), ratingBox(r.gameRating.b), 'rating'),
-      h('div', { class: 'sum-sep' }),
-    );
-    for (const ph of PHASES) {
-      if (r.phases[ph].w === null && r.phases[ph].b === null) continue;
-      table.append(row(t(`phase_${ph}` as Key), phaseCell(r.phases[ph].w), phaseCell(r.phases[ph].b), 'phase'));
-    }
     const meta = [hd.result.replace('1/2-1/2', '½–½'), hd.date?.replace(/\./g, '-'), hd.timeControl ? formatTimeControl(hd.timeControl) : null]
       .filter(Boolean)
       .join(' · ');
-    this.panelBody.append(table);
-    if (r.opening) this.panelBody.append(h('p', { class: 'sum-opening' }, r.opening));
-    this.panelBody.append(h('p', { class: 'sum-meta' }, meta));
+    this.panelBody.append(table, h('p', { class: 'sum-meta' }, meta));
 
     this.panelFoot.append(h('button', { class: 'btn btn-green btn-xl', on: { click: () => this.nextKey() } }, t('startReview')));
   }
