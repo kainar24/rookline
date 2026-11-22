@@ -55,6 +55,8 @@ export interface MoveReview {
   secondWin: number | null;
   sacrifice: boolean;
   phase: Phase;
+  /** Square where the opponent's previous move captured (null if it was not a capture). */
+  recaptureSquare?: string | null;
 }
 
 export interface GameReview {
@@ -152,6 +154,7 @@ export function reviewGame(game: ParsedGame, evals: PositionEval[], opts: Review
   const moves: MoveReview[] = [];
   let bookStreak = true;
   let prev: Category | null = null;
+  let prevCaptureTo: string | null = null;
   let prevTo: string | null = null;
   let opening: string | null = null;
   let lastBookPly = 0;
@@ -189,6 +192,7 @@ export function reviewGame(game: ParsedGame, evals: PositionEval[], opts: Review
       gap,
       sacrifice: sac !== null,
       previousCategory: prev,
+      // Taking the piece that just moved (or took) is too obvious to be "Great".
       isRecapture: !!p.captured && p.to === prevTo,
       givesMate: p.san.endsWith('#'),
       inBook,
@@ -196,6 +200,8 @@ export function reviewGame(game: ParsedGame, evals: PositionEval[], opts: Review
     if (category !== 'book') bookStreak = false;
     else lastBookPly = p.ply;
     prev = category;
+    const opponentCaptureTo = prevCaptureTo;
+    prevCaptureTo = p.captured ? p.to : null;
     prevTo = p.to;
     moves.push({
       ply: p.ply,
@@ -229,6 +235,7 @@ export function reviewGame(game: ParsedGame, evals: PositionEval[], opts: Review
       secondWin,
       sacrifice: sac !== null,
       phase: 'opening',
+      recaptureSquare: opponentCaptureTo,
     });
   }
   const counts = { w: emptyCounts(), b: emptyCounts() };

@@ -1,5 +1,6 @@
 import type { MoveReview } from '../analysis/classify';
 import { fill, getLang, tList, t, type Key, type Lang } from '../i18n/i18n';
+import { describeMove, type Idea } from './ideas';
 import { findReason, type Reason } from './reasons';
 
 /** Deterministic variant choice so the same move always reads the same, while neighbours differ. */
@@ -54,6 +55,43 @@ function reasonText(r: Reason, m: MoveReview, lang: Lang, seed: number): string 
   }
 }
 
+/** Sentence for a board idea ("Develops the knight to f3."), or '' when there is nothing to say. */
+export function ideaText(idea: Idea, lang: Lang, seed: number): string {
+  if (idea.kind === 'none') return '';
+  const key = (idea.kind === 'castle' ? `idea_castle_${idea.side}` : `idea_${idea.kind}`) as Key;
+  const params: Record<string, string | number> = {};
+  if ('piece' in idea) Object.assign(params, pieceWords(idea.piece, lang));
+  if ('square' in idea) params.square = idea.square;
+  if ('file' in idea) params.file = idea.file;
+  if ('captured' in idea) {
+    params.captured = t(`piece_${idea.captured}` as Key, undefined, lang);
+    params.capturedNom = t(`pieceNom_${idea.captured}` as Key, undefined, lang);
+  }
+  if ('target' in idea) {
+    params.target = t(`piece_${idea.target}` as Key, undefined, lang);
+    params.targetNom = t(`pieceNom_${idea.target}` as Key, undefined, lang);
+  }
+  if (idea.kind === 'fork') {
+    params.t1 = t(`piece_${idea.targets[0]}` as Key, undefined, lang);
+    params.t2 = t(`piece_${idea.targets[1]}` as Key, undefined, lang);
+  }
+  return fill(pick(tList(key, lang), seed), params);
+}
+
+function playedIdea(m: MoveReview): Idea {
+  return describeMove(m.fenBefore, m.uci, { recaptureSquare: m.recaptureSquare, opening: m.phase === 'opening', endgame: m.phase === 'endgame' });
+}
+
+/** "Nf3 was stronger: develops the knight to f3." — only when the best move has a clear idea. */
+function bestIdeaText(m: MoveReview, lang: Lang, seed: number): string {
+  if (!m.bestMove || !m.bestSan) return '';
+  const idea = describeMove(m.fenBefore, m.bestMove, { recaptureSquare: m.recaptureSquare, opening: m.phase === 'opening', endgame: m.phase === 'endgame' });
+  const text = ideaText(idea, lang, seed);
+  if (!text) return '';
+  const lower = text.charAt(0).toLowerCase() + text.slice(1);
+  return fill(pick(tList('r_bestIdea', lang), seed), { best: m.bestSan, idea: lower });
+}
+
 export interface MoveComment {
   reason: Reason;
   text: string;
@@ -68,8 +106,10 @@ export function commentFor(m: MoveReview, lang: Lang = getLang(), opts: { bubble
   if (reason.kind === 'mateDelivered') return { reason, text: pick(tList('c_mate_delivered', lang), seed) };
 
   switch (m.category) {
-    case 'book':
-      return { reason, text: pick(tList('c_book', lang), seed) };
+    case 'book': {
+      const idea = ideaText(playedIdea(m), lang, seed);
+      return { reason, text: idea ? `${idea} ${pick(tList('v_book', lang), seed + 1)}` : pick(tList('c_book', lang), seed) };
+    }
     case 'brilliant': {
       const words = pieceWords(sacrificedPiece(m), lang);
       return { reason, text: fill(pick(tList('c_brilliant', lang), seed), { ...p, ...words }) };
@@ -79,7 +119,17 @@ export function commentFor(m: MoveReview, lang: Lang = getLang(), opts: { bubble
     case 'excellent':
     case 'good': {
       if (reason.kind === 'keepsMate') {
-        return { reason, text: fill(pick(tList('c_best_mate', lang), seed), { ...p, n: reason.n }) };
+        const key = m.category === 'best' || m.category === 'great' ? 'c_best_mate' : 'c_keeps_mate';
+        return { reason, text: fill(pick(tList(key, lang), seed), { ...p, n: reason.n }) };
+      }
+      // Say what the move does, then how good it was — like a coach, not a score sheet.
+      const idea = ideaText(playedIdea(m), lang, seed);
+      if (idea) {
+        const verdict =
+          m.category === 'great'
+            ? fill(pick(tList('c_great', lang), seed + 1), p)
+            : fill(pick(tList(`v_${m.category}` as Key, lang), seed + 1), p);
+        return { reason, text: `${idea} ${verdict}` };
       }
       const key = `c_${m.category}` as Key;
       return { reason, text: fill(pick(tList(key, lang), seed), p) };
@@ -87,15 +137,17 @@ export function commentFor(m: MoveReview, lang: Lang = getLang(), opts: { bubble
     default: {
       // In the coach bubble the heading already says "X is a mistake" and the best move is shown
       // separately, so only the reason is needed.
+      // A quiet ("positional") loss reads better as what the best move would have done.
+      const bestIdea = reason.kind === 'positional' ? bestIdeaText(m, lang, seed + 1) : '';
       if (opts.bubble) {
-        const reasonOnly = reasonText(reason, m, lang, seed + 1);
+        const reasonOnly = bestIdea || reasonText(reason, m, lang, seed + 1);
         if (reasonOnly) return { reason, text: reasonOnly };
       }
       // If the reason sentence already names the best move, use a short head to avoid repeating it.
       const namesBest = ['missedMate', 'missedCapture', 'missedCheck', 'positional'].includes(reason.kind);
       const headKey = (namesBest ? `c_${m.category}_short` : `c_${m.category}`) as Key;
       const head = fill(pick(tList(headKey, lang), seed), p);
-      const tail = reasonText(reason, m, lang, seed + 1);
+      const tail = bestIdea || reasonText(reason, m, lang, seed + 1);
       return { reason, text: tail ? `${head} ${tail}` : head };
     }
   }
