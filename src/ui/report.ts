@@ -285,7 +285,8 @@ export class ReportView {
         : h(
             'div',
             { class: `phase-cell cat-text-${phaseCategory(v)}`, title: t('phaseHint', { a: v.toFixed(1) }) },
-            categoryIcon(phaseCategory(v), 26),
+            categoryIcon(phaseCategory(v), 24),
+            h('span', { class: 'phase-acc' }, v.toFixed(0)),
           );
     const sep = () => h('div', { class: 'sum-sep' });
 
