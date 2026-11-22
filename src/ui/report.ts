@@ -1,6 +1,8 @@
 import { Chess, type Square } from 'chess.js';
 import { BAD_CATEGORIES, CATEGORIES, type Category, type GameReview, type MoveReview } from '../analysis/classify';
+import { CONFIG } from '../analysis/config';
 import { formatEval, winPercentWhite } from '../analysis/evalMath';
+import { PHASES } from '../analysis/phases';
 import { materialBalance, playLine } from '../analysis/material';
 import { commentFor } from '../comments/templates';
 import { getLang, t, type Key } from '../i18n/i18n';
@@ -14,6 +16,17 @@ import { clear, h } from './dom';
 import { avatar, categoryIcon, uiIcon } from './icons';
 
 const catLabel = (c: Category) => t(`cat_${c}` as Key);
+
+/** Icon for a phase accuracy (thresholds in CONFIG.phases.icon). */
+function phaseCategory(acc: number): Category {
+  const t = CONFIG.phases.icon;
+  if (acc >= t.best) return 'best';
+  if (acc >= t.excellent) return 'excellent';
+  if (acc >= t.good) return 'good';
+  if (acc >= t.inaccuracy) return 'inaccuracy';
+  if (acc >= t.mistake) return 'mistake';
+  return 'blunder';
+}
 
 interface RetryState {
   move: MoveReview;
@@ -257,15 +270,32 @@ export class ReportView {
         ),
       );
     }
+    const ratingBox = (v: number | null) =>
+      h('div', { class: 'rating-box', title: t('gameRatingHint') }, v === null ? '—' : `≈${v}`);
+    const phaseCell = (v: number | null) =>
+      v === null
+        ? h('div', { class: 'phase-cell muted' }, '—')
+        : h(
+            'div',
+            { class: `phase-cell cat-text-${phaseCategory(v)}`, title: t('phaseHint', { a: v.toFixed(1) }) },
+            categoryIcon(phaseCategory(v), 22),
+            h('span', { class: 'phase-acc' }, v.toFixed(0)),
+          );
     table.append(
       h('div', { class: 'sum-sep' }),
-      // Game rating is a stub in v1 (review.gameRating === null).
-      row(t('gameRating'), h('div', { class: 'rating-box' }, '—'), h('div', { class: 'rating-box' }, '—'), 'rating'),
+      row(t('gameRating'), ratingBox(r.gameRating.w), ratingBox(r.gameRating.b), 'rating'),
+      h('div', { class: 'sum-sep' }),
     );
+    for (const ph of PHASES) {
+      if (r.phases[ph].w === null && r.phases[ph].b === null) continue;
+      table.append(row(t(`phase_${ph}` as Key), phaseCell(r.phases[ph].w), phaseCell(r.phases[ph].b), 'phase'));
+    }
     const meta = [hd.result.replace('1/2-1/2', '½–½'), hd.date?.replace(/\./g, '-'), hd.timeControl ? formatTimeControl(hd.timeControl) : null]
       .filter(Boolean)
       .join(' · ');
-    this.panelBody.append(table, h('p', { class: 'sum-meta' }, meta));
+    this.panelBody.append(table);
+    if (r.opening) this.panelBody.append(h('p', { class: 'sum-opening' }, r.opening));
+    this.panelBody.append(h('p', { class: 'sum-meta' }, meta));
 
     this.panelFoot.append(h('button', { class: 'btn btn-green btn-xl', on: { click: () => this.nextKey() } }, t('startReview')));
   }

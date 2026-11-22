@@ -80,6 +80,11 @@ export const en: typeof ru = {
   llmError: 'Could not get an explanation: {msg}',
   pickMoveHint: 'Pick a move in the list or on the graph.',
   gameRating: 'Game rating',
+  gameRatingHint: 'Approximate: estimated from accuracy and the players\' ratings',
+  phase_opening: 'Opening',
+  phase_middlegame: 'Middlegame',
+  phase_endgame: 'Endgame',
+  phaseHint: 'Accuracy in this phase: {a}',
   comingSoon: 'soon',
   chartHint: 'Click the graph to jump to a move',
 

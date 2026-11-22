@@ -36,29 +36,67 @@ export function uciScoreToWhite(kind: 'cp' | 'mate', value: number, whiteToMove:
 }
 
 /** Win probability (0..100) for White given a white-perspective evaluation. */
-export function winPercentWhite(evalWhite: number): number {
-  const k = CONFIG.winK;
+export function winPercentWhite(evalWhite: number, k: number = CONFIG.winK): number {
   return 50 + 50 * (2 / (1 + Math.exp(-k * evalWhite)) - 1);
 }
 
 /** Win probability (0..100) for the given colour. */
-export function winPercentFor(evalWhite: number, white: boolean): number {
-  const w = winPercentWhite(evalWhite);
+export function winPercentFor(evalWhite: number, white: boolean, k: number = CONFIG.winK): number {
+  const w = winPercentWhite(evalWhite, k);
   return white ? w : 100 - w;
 }
 
-/** Lichess per-move accuracy from a win% loss, clamped to 0..100. */
+/** Per-move accuracy from a win% loss (lichess shape, constants in CONFIG.accuracy), 0..100. */
 export function moveAccuracy(loss: number): number {
+  const { a, b, c } = CONFIG.accuracy;
   const l = Math.max(0, loss);
-  const a = 103.1668 * Math.exp(-0.04354 * l) - 3.1669;
-  return Math.min(100, Math.max(0, a));
+  return Math.min(100, Math.max(0, a * Math.exp(-b * l) - c));
 }
 
-/** Average accuracy of a list of losses; null when the list is empty. */
+/** Plain average of per-move accuracies for a list of losses; null when the list is empty. */
 export function averageAccuracy(losses: number[]): number | null {
   if (losses.length === 0) return null;
   const sum = losses.reduce((s, l) => s + moveAccuracy(l), 0);
   return Math.min(100, Math.max(0, sum / losses.length));
+}
+
+function stdDev(xs: number[]): number {
+  const m = xs.reduce((s, x) => s + x, 0) / xs.length;
+  return Math.sqrt(xs.reduce((s, x) => s + (x - m) ** 2, 0) / xs.length);
+}
+
+/**
+ * Weight of each move (index = ply − 1): how much the win% swings around it.
+ * Quiet positions count less, sharp ones more — one blunder in a tense spot weighs a lot.
+ */
+export function volatilityWeights(whiteWin: number[]): number[] {
+  const { minWeight, maxWeight } = CONFIG.accuracy;
+  const n = whiteWin.length;
+  const size = Math.min(8, Math.max(2, Math.ceil(n / 10)));
+  const half = Math.round(size / 2);
+  const out: number[] = [];
+  for (let i = 1; i < n; i++) {
+    let win: number[];
+    if (i - half < 0) win = whiteWin.slice(0, size);
+    else if (i + half > n) win = whiteWin.slice(-size);
+    else win = whiteWin.slice(i - half, i + half);
+    out.push(Math.min(maxWeight, Math.max(minWeight, stdDev(win))));
+  }
+  return out;
+}
+
+/**
+ * Accuracy of one player's moves: a mix of the volatility-weighted mean and the harmonic mean
+ * of per-move accuracies (the harmonic mean punishes a few very bad moves).
+ */
+export function playerAccuracy(accuracies: number[], weights: number[]): number | null {
+  if (accuracies.length === 0) return null;
+  const { weightedShare, harmonicFloor } = CONFIG.accuracy;
+  const wSum = weights.reduce((s, w) => s + w, 0);
+  const weighted = accuracies.reduce((s, a, i) => s + a * weights[i], 0) / wSum;
+  const harmonic = accuracies.length / accuracies.reduce((s, a) => s + 1 / Math.max(a, harmonicFloor), 0);
+  const v = weightedShare * weighted + (1 - weightedShare) * harmonic;
+  return Math.min(100, Math.max(0, v));
 }
 
 /** Human-readable evaluation from White's side: "+1.25", "−0.40", "#3", "#-2". */

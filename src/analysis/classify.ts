@@ -1,7 +1,10 @@
 import type { PositionEval } from '../engine/types';
 import type { ParsedGame } from '../pgn/pgn';
 import { CONFIG } from './config';
-import { averageAccuracy, moveAccuracy, winPercentFor } from './evalMath';
+import { moveAccuracy, playerAccuracy, volatilityWeights, winPercentFor } from './evalMath';
+import type { OpeningBook } from './openings';
+import { PHASES, phaseOfPlies, type Phase } from './phases';
+import { estimateGameRating } from './rating';
 import { detectSacrifice, uciToSan } from './material';
 
 export const CATEGORIES = [
@@ -38,6 +41,7 @@ export interface MoveReview {
   winAfter: number;
   /** Win% points lost (≥ 0). */
   loss: number;
+  /** Move accuracy 0..100 (chess.com-fitted curve, see CONFIG.accuracy). */
   accuracy: number;
   category: Category;
   isBest: boolean;
@@ -50,6 +54,7 @@ export interface MoveReview {
   /** Win% of the second line for the mover, when available. */
   secondWin: number | null;
   sacrifice: boolean;
+  phase: Phase;
 }
 
 export interface GameReview {
@@ -59,8 +64,17 @@ export interface GameReview {
   /** Win% for White after each position (index = ply, 0 = start). */
   whiteWin: number[];
   evals: number[];
-  /** Placeholder: game rating estimate is out of scope for v1. */
-  gameRating: null;
+  /** Approximate rating for each side in this game (null when a side made no moves). */
+  gameRating: { w: number | null; b: number | null };
+  /** Accuracy per phase and side; null when the phase did not happen or the side made no move in it. */
+  phases: Record<Phase, { w: number | null; b: number | null }>;
+  /** Deepest named opening reached, e.g. "C20 King's Pawn Game". */
+  opening: string | null;
+}
+
+export interface ReviewOptions {
+  /** Opening book; without it "Book" falls back to the early-ply rule. */
+  book?: OpeningBook;
 }
 
 /** Category from loss alone (the "base" ladder). */
@@ -89,11 +103,15 @@ export interface ClassifyInput {
   isRecapture?: boolean;
   /** The move delivers checkmate. */
   givesMate?: boolean;
+  /** Decided by the opening book when one is loaded (overrides the ply rule). */
+  inBook?: boolean;
 }
 
 /** Pure decision ladder with special labels. Order matters: book → brilliant → great → base → miss. */
 export function classifyMove(i: ClassifyInput): Category {
-  if (i.bookStreak && i.ply <= CONFIG.book.maxPly && i.loss <= CONFIG.book.maxLoss) return 'book';
+  if (i.inBook !== undefined) {
+    if (i.inBook) return 'book';
+  } else if (i.bookStreak && i.ply <= CONFIG.book.maxPly && i.loss <= CONFIG.book.maxLoss) return 'book';
   const b = CONFIG.brilliant;
   if (i.sacrifice && i.loss <= b.maxLoss && i.winAfter >= b.minWinAfter && i.winBefore < b.maxWinBefore) {
     return 'brilliant';
@@ -108,6 +126,8 @@ export function classifyMove(i: ClassifyInput): Category {
   ) {
     return 'great';
   }
+  // Any checkmate is as good as the engine's move, even if the engine preferred another mate.
+  if (i.givesMate) return 'best';
   const base = baseCategory(i.loss, i.isBest);
   const m = CONFIG.miss;
   if (
@@ -127,12 +147,15 @@ function emptyCounts(): Record<Category, number> {
 }
 
 /** Build the full review from parsed game + one PositionEval per FEN. */
-export function reviewGame(game: ParsedGame, evals: PositionEval[]): GameReview {
+export function reviewGame(game: ParsedGame, evals: PositionEval[], opts: ReviewOptions = {}): GameReview {
   if (evals.length !== game.fens.length) throw new Error('evals do not match positions');
   const moves: MoveReview[] = [];
   let bookStreak = true;
   let prev: Category | null = null;
   let prevTo: string | null = null;
+  let opening: string | null = null;
+  let lastBookPly = 0;
+  const book = opts.book;
   for (const p of game.plies) {
     const before = evals[p.ply - 1];
     const after = evals[p.ply];
@@ -148,6 +171,14 @@ export function reviewGame(game: ParsedGame, evals: PositionEval[]): GameReview 
     const secondWin = second ? winPercentFor(second.eval, white) : null;
     const gap = secondWin === null ? null : winBefore - secondWin;
     const sac = detectSacrifice(p.fenAfter, p.to, p.captured);
+    let inBook: boolean | undefined;
+    if (book) {
+      inBook =
+        bookStreak &&
+        (book.has(p.fenAfter) || (p.ply <= CONFIG.book.fallbackMaxPly && loss <= CONFIG.book.maxLoss));
+      const name = book.name(p.fenAfter);
+      if (name && (inBook || opening === null)) opening = name;
+    }
     const category = classifyMove({
       ply: p.ply,
       loss,
@@ -160,8 +191,10 @@ export function reviewGame(game: ParsedGame, evals: PositionEval[]): GameReview 
       previousCategory: prev,
       isRecapture: !!p.captured && p.to === prevTo,
       givesMate: p.san.endsWith('#'),
+      inBook,
     });
     if (category !== 'book') bookStreak = false;
+    else lastBookPly = p.ply;
     prev = category;
     prevTo = p.to;
     moves.push({
@@ -179,7 +212,14 @@ export function reviewGame(game: ParsedGame, evals: PositionEval[]): GameReview 
       winBefore,
       winAfter,
       loss,
-      accuracy: moveAccuracy(loss),
+      accuracy: moveAccuracy(
+        isBest
+          ? 0
+          : Math.max(
+              0,
+              winPercentFor(evalBefore, white, CONFIG.accuracy.winK) - winPercentFor(evalAfter, white, CONFIG.accuracy.winK),
+            ),
+      ),
       category,
       isBest,
       bestMove,
@@ -188,25 +228,46 @@ export function reviewGame(game: ParsedGame, evals: PositionEval[]): GameReview 
       replyLine: after.lines[0]?.pv ?? [],
       secondWin,
       sacrifice: sac !== null,
+      phase: 'opening',
     });
   }
   const counts = { w: emptyCounts(), b: emptyCounts() };
   for (const m of moves) counts[m.color][m.category]++;
   const evalList = evals.map((e) => e.lines[0]?.eval ?? 0);
+  const whiteWin = evalList.map((e) => winPercentFor(e, true));
+
+  const weights = volatilityWeights(whiteWin);
+  const phaseList = phaseOfPlies(game.fens, lastBookPly);
+  moves.forEach((m, i) => (m.phase = phaseList[i]));
+  const accuracyOf = (pick: (m: MoveReview) => boolean) => {
+    const sel = moves.map((m, i) => ({ m, w: weights[i] })).filter(({ m }) => pick(m));
+    return playerAccuracy(
+      sel.map(({ m }) => m.accuracy),
+      sel.map(({ w }) => w),
+    );
+  };
+  const accuracy = {
+    w: accuracyOf((m) => m.color === 'w'),
+    b: accuracyOf((m) => m.color === 'b'),
+  };
+  const phases = Object.fromEntries(
+    PHASES.map((ph) => [
+      ph,
+      { w: accuracyOf((m) => m.color === 'w' && m.phase === ph), b: accuracyOf((m) => m.color === 'b' && m.phase === ph) },
+    ]),
+  ) as GameReview['phases'];
+  const elo = (v?: string) => (v && /^\d+$/.test(v) ? Number(v) : undefined);
   return {
     moves,
-    accuracy: {
-      w: averageAccuracy(moves.filter((m) => m.color === 'w').map((m) => m.loss)),
-      b: averageAccuracy(moves.filter((m) => m.color === 'b').map((m) => m.loss)),
-    },
+    accuracy,
     counts,
     evals: evalList,
-    whiteWin: evalList.map((e) => winPercentFor(e, true)),
-    gameRating: estimateGameRating(),
+    whiteWin,
+    gameRating: {
+      w: estimateGameRating(accuracy.w, elo(game.headers.whiteElo)),
+      b: estimateGameRating(accuracy.b, elo(game.headers.blackElo)),
+    },
+    phases,
+    opening,
   };
-}
-
-/** Game rating (performance estimate) is intentionally not implemented in v1. */
-export function estimateGameRating(): null {
-  return null;
 }

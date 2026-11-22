@@ -10,7 +10,7 @@ const base: MoveReview = {
   fenAfter: 'rnbqkbnr/pppppppp/8/8/8/5N2/PPPPPPPP/RNBQKB1R b KQkq - 1 1',
   evalBefore: 30, evalAfter: -400, winBefore: 52, winAfter: 20, loss: 32, accuracy: 10,
   category: 'blunder', isBest: false, bestMove: 'e2e4', bestSan: 'e4', bestLine: ['e2e4'], replyLine: ['e7e5'],
-  secondWin: null, sacrifice: false,
+  secondWin: null, sacrifice: false, phase: 'middlegame',
 };
 
 describe('template comments', () => {

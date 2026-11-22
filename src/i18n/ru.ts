@@ -83,6 +83,11 @@ export const ru = {
   llmError: 'Не удалось получить объяснение: {msg}',
   pickMoveHint: 'Выберите ход в списке или на графике.',
   gameRating: 'Рейтинг игры',
+  gameRatingHint: 'Примерный: по точности и рейтингам игроков',
+  phase_opening: 'Дебют',
+  phase_middlegame: 'Миттельшпиль',
+  phase_endgame: 'Эндшпиль',
+  phaseHint: 'Точность в этой стадии: {a}',
   comingSoon: 'скоро',
   chartHint: 'Нажмите на график, чтобы перейти к ходу',
 

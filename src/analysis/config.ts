@@ -7,7 +7,7 @@ export const CONFIG = {
   winK: 0.00368208,
 
   /** Default and allowed search depth. */
-  depth: { default: 13, min: 8, max: 20 },
+  depth: { default: 16, min: 8, max: 22 },
   multiPv: 2,
 
   /** Base categories by win% loss (percentage points, inclusive upper bounds). */
@@ -20,10 +20,63 @@ export const CONFIG = {
   },
 
   book: {
-    /** A move can be "Book" only while ply ≤ maxPly … */
+    /**
+     * With the opening book loaded, a move is "Book" when the position after it is in the book.
+     * Without a book (unit tests) or past its end, a move can still be "Book" while ply ≤ maxPly …
+     */
     maxPly: 10,
     /** … and its loss stays at or below this. The streak ends at the first non-book move. */
     maxLoss: 2,
+    /** With the book loaded, the fallback above only applies up to this ply. */
+    fallbackMaxPly: 2,
+  },
+
+  /**
+   * Game accuracy, fitted to chess.com's published accuracies: 110 public games (220 players,
+   * ratings 200–3300) analysed at depth 16 with the same Stockfish lite build. Mean absolute
+   * error vs chess.com: 3.9 points (lichess formula: 8.0, plain average used before: 16.5).
+   * Per move: a·exp(−b·loss) − c, with loss measured on a flatter win% curve (winK).
+   * Per player: harmonic mean of move accuracies (each floored at harmonicFloor), optionally
+   * blended with a volatility-weighted mean (weightedShare; the fit preferred 0).
+   */
+  accuracy: {
+    winK: 0.002,
+    a: 103.1669,
+    b: 0.09,
+    c: 3.1669,
+    weightedShare: 0,
+    harmonicFloor: 23,
+    /** Weights = std-dev of win% in a sliding window, clamped to [minWeight, maxWeight]. */
+    minWeight: 0.5,
+    maxWeight: 12,
+  },
+
+  /**
+   * Approximate game rating. chess.com's accuracies grow roughly with ln(rating):
+   * expected accuracy ≈ slope·ln(R) + offset (least squares on the same 220 players). A game played above the
+   * expected accuracy for the player's rating moves the estimate up, scaled by `shrink`
+   * because one game is a noisy sample.
+   */
+  rating: {
+    slope: 11.5,
+    offset: -7.46,
+    shrink: 0.6,
+    min: 100,
+    max: 3200,
+    /** Without Elo headers the estimate is the rating whose expected accuracy matches. */
+  },
+
+  phases: {
+    /** Endgame once this many queens/rooks/bishops/knights or fewer are left (both sides). */
+    endgameMaxPieces: 6,
+    /** Middlegame once this many or fewer are left … */
+    middlegameMaxPieces: 10,
+    /** … or either side has fewer than this many pieces on its back rank … */
+    backRankSparse: 4,
+    /** … or this many plies have been played. */
+    openingMaxPly: 30,
+    /** Phase accuracy → icon (lowest bound for each). */
+    icon: { best: 95, excellent: 85, good: 72, inaccuracy: 58, mistake: 42 },
   },
 
   great: {

@@ -4,5 +4,6 @@ import { defineConfig } from 'vite';
 // under /<repo>/ as well as at a domain root.
 export default defineConfig({
   base: './',
-  build: { target: 'es2022' },
+  // openings.json is a lazy chunk of ~680 KB (≈90 KB gzipped), loaded only when a review is built.
+  build: { target: 'es2022', chunkSizeWarningLimit: 800 },
 });

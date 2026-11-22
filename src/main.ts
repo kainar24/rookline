@@ -2,6 +2,7 @@ import './styles.css';
 import { analysePositions, CancelledError } from './analysis/analyzer';
 import { reviewGame } from './analysis/classify';
 import { CONFIG } from './analysis/config';
+import { loadOpeningBook } from './analysis/openings';
 import { cacheKey, loadCached, saveCached } from './cache/idbCache';
 import { createWorkerEngine } from './engine/workerEngine';
 import type { UciEngine } from './engine/uciEngine';
@@ -115,7 +116,7 @@ async function startAnalysis(pgn: string) {
   const depth = settings.depth;
   const key = cacheKey(await hashGame(game), depth);
   const cached = await loadCached(key);
-  if (cached && cached.length === game.fens.length) return showReport(game, reviewGame(game, cached));
+  if (cached && cached.length === game.fens.length) return showReport(game, reviewGame(game, cached, { book: await bookOrNone() }));
   if (location.protocol === 'file:') return showInput(t('errFileProtocol'));
 
   screen = 'analysing';
@@ -150,7 +151,7 @@ async function startAnalysis(pgn: string) {
       },
     });
     await saveCached(key, evals);
-    showReport(game, reviewGame(game, evals));
+    showReport(game, reviewGame(game, evals, { book: await bookOrNone() }));
   } catch (e) {
     if (e instanceof CancelledError || ac.signal.aborted) {
       if (screen === 'analysing') showInput(t('cancelled'));
@@ -161,6 +162,16 @@ async function startAnalysis(pgn: string) {
     engine = null;
     engineInit = null;
     showInput(`${t('errEngineLoad')} (${(e as Error).message})`);
+  }
+}
+
+/** The opening book is optional: if it fails to load, "Book" falls back to the early-ply rule. */
+async function bookOrNone() {
+  try {
+    return await loadOpeningBook();
+  } catch (e) {
+    console.warn('[openings]', e);
+    return undefined;
   }
 }
 

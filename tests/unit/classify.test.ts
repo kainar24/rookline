@@ -40,6 +40,13 @@ describe('special labels', () => {
     expect(classifyMove({ ...base, ply: 11, bookStreak: true, loss: 1 })).toBe('excellent');
     expect(classifyMove({ ...base, ply: 4, bookStreak: true, loss: 3 })).toBe('good');
   });
+  it('with an opening book, the book decides', () => {
+    expect(classifyMove({ ...base, ply: 14, loss: 4, inBook: true })).toBe('book');
+    expect(classifyMove({ ...base, ply: 2, bookStreak: true, loss: 0, inBook: false })).toBe('excellent');
+  });
+  it('any checkmate is Best, even when the engine preferred another mate', () => {
+    expect(classifyMove({ ...base, loss: 0.5, givesMate: true })).toBe('best');
+  });
   it('Great when the best move is the only good one', () => {
     expect(classifyMove({ ...base, isBest: true, gap: 12 })).toBe('great');
     expect(classifyMove({ ...base, isBest: true, gap: 4 })).toBe('best');
@@ -105,6 +112,9 @@ describe('reviewGame with synthetic evals', () => {
     expect(r.moves[0].category).toBe('book');
     expect(r.counts.w.blunder).toBe(1);
     expect(r.accuracy.w!).toBeLessThan(r.accuracy.b!);
-    expect(r.gameRating).toBeNull();
+    expect(r.gameRating.w).not.toBeNull();
+    expect(r.moves.every((m) => m.phase === 'opening')).toBe(true);
+    expect(r.phases.opening.w).toBeCloseTo(r.accuracy.w!, 6);
+    expect(r.phases.endgame.w).toBeNull();
   });
 });

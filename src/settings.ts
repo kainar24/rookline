@@ -7,6 +7,8 @@ export interface Settings {
   lang: Lang;
   theme: ThemePref;
   depth: number;
+  /** Settings format version; 2 = default depth raised from 13 to 16. */
+  v?: number;
   /** Claude API key: kept in localStorage only, sent only to api.anthropic.com. */
   apiKey: string;
   model: string;
@@ -17,7 +19,7 @@ const KEY = 'rookline.settings.v1';
 
 function defaults(): Settings {
   const lang: Lang = typeof navigator !== 'undefined' && navigator.language?.startsWith('ru') ? 'ru' : 'en';
-  return { lang, theme: 'dark', depth: CONFIG.depth.default, apiKey: '', model: DEFAULT_MODEL };
+  return { lang, theme: 'dark', depth: CONFIG.depth.default, v: 2, apiKey: '', model: DEFAULT_MODEL };
 }
 
 export function loadSettings(): Settings {
@@ -27,6 +29,10 @@ export function loadSettings(): Settings {
     if (!raw) return d;
     const s = { ...d, ...JSON.parse(raw) } as Settings;
     s.depth = Math.min(CONFIG.depth.max, Math.max(CONFIG.depth.min, Number(s.depth) || d.depth));
+    if ((s.v ?? 1) < 2) {
+      if (s.depth === 13) s.depth = d.depth;
+      s.v = 2;
+    }
     if (s.lang !== 'ru' && s.lang !== 'en') s.lang = d.lang;
     return s;
   } catch {

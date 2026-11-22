@@ -10,6 +10,7 @@ import {
   winPercentFor,
   winPercentWhite,
 } from '../../src/analysis/evalMath';
+import { CONFIG } from '../../src/analysis/config';
 
 describe('cp → win%', () => {
   it('is 50% at 0 cp', () => expect(winPercentWhite(0)).toBeCloseTo(50, 10));
@@ -54,10 +55,11 @@ describe('mate encoding', () => {
 });
 
 describe('accuracy', () => {
-  it('is ~100 for zero loss', () => expect(moveAccuracy(0)).toBeCloseTo(99.9999, 3));
-  it('follows the Lichess formula', () => {
-    expect(moveAccuracy(10)).toBeCloseTo(103.1668 * Math.exp(-0.4354) - 3.1669, 8);
-    expect(moveAccuracy(30)).toBeCloseTo(103.1668 * Math.exp(-0.04354 * 30) - 3.1669, 8);
+  it('is ~100 for zero loss', () => expect(moveAccuracy(0)).toBeCloseTo(100, 2));
+  it('follows a·exp(−b·loss) − c with the fitted constants', () => {
+    const { a, b, c } = CONFIG.accuracy;
+    expect(moveAccuracy(10)).toBeCloseTo(a * Math.exp(-b * 10) - c, 8);
+    expect(moveAccuracy(30)).toBeCloseTo(a * Math.exp(-b * 30) - c, 8);
   });
   it('is clamped to 0..100', () => {
     expect(moveAccuracy(100)).toBe(0);
