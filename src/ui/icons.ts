@@ -56,6 +56,7 @@ export const UI = {
   plus: '<path d="M12 5v14M5 12h14"/>',
   globe: '<circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3c2.5 2.7 3.8 5.7 3.8 9s-1.3 6.3-3.8 9c-2.5-2.7-3.8-5.7-3.8-9S9.5 5.7 12 3z"/>',
   star: '<path d="M12 4l2.4 5 5.4.7-4 3.8 1 5.4L12 16.3 7.2 19l1-5.4-4-3.8 5.4-.7z"/>',
+  chevron: '<path d="M6 9l6 6 6-6" />',
   bulb: '<path d="M9 18h6M10 21h4M12 3a6 6 0 0 0-3.5 10.9c.6.5 1 1.2 1 2V16h5v-.1c0-.8.4-1.5 1-2A6 6 0 0 0 12 3z"/>',
 } as const;
 
@@ -66,7 +67,7 @@ export function uiIcon(name: keyof typeof UI, size = 20): SVGSVGElement {
 }
 
 /** Brand mark: a rook. */
-export const BRAND_MARK = `<svg width="30" height="30" viewBox="0 0 32 32" aria-hidden="true"><path d="M9 6h3v3h2.5V6h3v3H20V6h3v6l-2.4 2.2v7.6L23 24v3H9v-3l2.4-2.2v-7.6L9 12z" fill="currentColor"/></svg>`;
+export const BRAND_MARK = `<svg class="brand-mark" width="32" height="32" viewBox="0 0 32 32" aria-hidden="true"><defs><linearGradient id="rl-tile" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#9bd05f"/><stop offset="1" stop-color="#5e9631"/></linearGradient></defs><rect width="32" height="32" rx="8" fill="url(#rl-tile)"/><path d="M10.2 5.5h2.7v2.4h1.8V5.5h2.6v2.4h1.8V5.5h2.7v4.6l-2 1.9v5.6l2 1.9v2.1H10.2V19.5l2-1.9V12l-2-1.9z" fill="#fff"/><path d="M4.5 27l5.8-3 4.6 1.6 5.6-4 6.9 2.6" fill="none" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/><circle cx="20.5" cy="21.6" r="1.7" fill="#fff"/></svg>`;
 
 /** Generic avatar (pawn silhouette) for player strips and the coach. */
 export function avatar(color: 'w' | 'b' | 'coach', size = 36): SVGSVGElement {

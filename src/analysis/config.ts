@@ -10,11 +10,18 @@ export const CONFIG = {
   depth: { default: 16, min: 8, max: 22 },
   multiPv: 2,
 
-  /** Base categories by win% loss (percentage points, inclusive upper bounds). */
+  /**
+   * Base categories by win% loss (percentage points, inclusive upper bounds).
+   * The loss is measured on a flatter win% curve than the eval chart (winK below): chess.com
+   * punishes errors in already lopsided positions more than the lichess curve does. The same
+   * curve fits chess.com's accuracies (see `accuracy`), and the bounds were checked against
+   * chess.com's category counts for a real game (tests/engine/chesscomAccuracy.test.ts).
+   */
   loss: {
-    excellent: 2,
-    good: 5,
-    inaccuracy: 10,
+    winK: 0.002,
+    excellent: 1.5,
+    good: 3,
+    inaccuracy: 7,
     mistake: 20,
     // > mistake → blunder
   },
@@ -35,12 +42,11 @@ export const CONFIG = {
    * Game accuracy, fitted to chess.com's published accuracies: 110 public games (220 players,
    * ratings 200–3300) analysed at depth 16 with the same Stockfish lite build. Mean absolute
    * error vs chess.com: 3.9 points (lichess formula: 8.0, plain average used before: 16.5).
-   * Per move: a·exp(−b·loss) − c, with loss measured on a flatter win% curve (winK).
+   * Per move: a·exp(−b·loss) − c, with the loss from `loss.winK`.
    * Per player: harmonic mean of move accuracies (each floored at harmonicFloor), optionally
    * blended with a volatility-weighted mean (weightedShare; the fit preferred 0).
    */
   accuracy: {
-    winK: 0.002,
     a: 103.1669,
     b: 0.09,
     c: 3.1669,
@@ -103,8 +109,10 @@ export const CONFIG = {
   miss: {
     /** The opponent's previous move had at least this category weight (mistake/blunder). */
     previousCategories: ['mistake', 'blunder'] as const,
-    /** Current move loses at least this much … */
-    minLoss: 10,
+    /** Current move loses at least this much (flat-curve points) … */
+    minLoss: 3,
+    /** … and gives back at least this share of what the opponent's error had handed over … */
+    minShareOfGift: 0.5,
     /** … while the best move would have kept at least this win% for the mover. */
     minBestWin: 70,
     /** … and the mover is still not losing after the move (otherwise it stays Blunder/Mistake). */

@@ -8,12 +8,12 @@ import { QUEEN_BLUNDER } from '../fixtures/games';
 describe('base thresholds', () => {
   it.each([
     [0, 'excellent'],
-    [2, 'excellent'],
-    [2.01, 'good'],
-    [5, 'good'],
-    [5.5, 'inaccuracy'],
-    [10, 'inaccuracy'],
-    [10.1, 'mistake'],
+    [1.5, 'excellent'],
+    [1.51, 'good'],
+    [3, 'good'],
+    [3.1, 'inaccuracy'],
+    [7, 'inaccuracy'],
+    [7.1, 'mistake'],
     [20, 'mistake'],
     [20.1, 'blunder'],
     [60, 'blunder'],

@@ -47,3 +47,12 @@ describe('PGN parsing', () => {
     expect(await hashGame(a)).toBe(await hashGame(b));
   });
 });
+
+describe('clocks', () => {
+  it('reads one [%clk] per move and the base time', () => {
+    const g = parseGame('[TimeControl "600"]\n\n1. e4 {[%clk 0:09:56.4]} 1... e5 {[%clk 0:09:55.8]} 2. Nf3 {[%clk 0:09:50]} *');
+    expect(g.clocks).toEqual([596.4, 595.8, 590]);
+    expect(g.baseClock).toBe(600);
+  });
+  it('ignores PGNs without clocks', () => expect(parseGame('1. e4 e5 *').clocks).toBeUndefined());
+});

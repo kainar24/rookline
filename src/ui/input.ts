@@ -1,6 +1,7 @@
 import { chesscomMonth, chesscomRecent, ImportError, lichessRecent, type RemoteGame } from '../importers/importers';
 import { t, type Key } from '../i18n/i18n';
 import { summariseGames, type GameSummary } from '../pgn/pgn';
+import { rememberMe } from '../settings';
 import { clear, h } from './dom';
 import { uiIcon } from './icons';
 
@@ -233,6 +234,7 @@ export class InputView {
     input.value = st.user;
     const search = async () => {
       st.user = input.value.trim();
+      rememberMe(st.user);
       st.error = undefined;
       st.games = [];
       st.loading = true;

@@ -101,6 +101,8 @@ export interface ClassifyInput {
   gap: number | null;
   sacrifice: boolean;
   previousCategory: Category | null;
+  /** Loss of the opponent's previous move (what their error handed over). */
+  previousLoss?: number;
   /** Captures on the square where the opponent's last move landed. */
   isRecapture?: boolean;
   /** The move delivers checkmate. */
@@ -136,6 +138,7 @@ export function classifyMove(i: ClassifyInput): Category {
     i.previousCategory !== null &&
     (m.previousCategories as readonly string[]).includes(i.previousCategory) &&
     i.loss >= m.minLoss &&
+    i.loss >= m.minShareOfGift * (i.previousLoss ?? 0) &&
     i.winBefore >= m.minBestWin &&
     i.winAfter >= m.minWinAfter
   ) {
@@ -155,6 +158,7 @@ export function reviewGame(game: ParsedGame, evals: PositionEval[], opts: Review
   let bookStreak = true;
   let prev: Category | null = null;
   let prevCaptureTo: string | null = null;
+  let prevLoss = 0;
   let prevTo: string | null = null;
   let opening: string | null = null;
   let lastBookPly = 0;
@@ -169,7 +173,8 @@ export function reviewGame(game: ParsedGame, evals: PositionEval[], opts: Review
     const winAfter = winPercentFor(evalAfter, white);
     const bestMove = before.bestMove ?? before.lines[0]?.pv[0] ?? null;
     const isBest = bestMove !== null && bestMove === p.uci;
-    const loss = isBest ? 0 : Math.max(0, winBefore - winAfter);
+    const kL = CONFIG.loss.winK;
+    const loss = isBest ? 0 : Math.max(0, winPercentFor(evalBefore, white, kL) - winPercentFor(evalAfter, white, kL));
     const second = before.lines[1];
     const secondWin = second ? winPercentFor(second.eval, white) : null;
     const gap = secondWin === null ? null : winBefore - secondWin;
@@ -192,6 +197,7 @@ export function reviewGame(game: ParsedGame, evals: PositionEval[], opts: Review
       gap,
       sacrifice: sac !== null,
       previousCategory: prev,
+      previousLoss: prevLoss,
       // Taking the piece that just moved (or took) is too obvious to be "Great".
       isRecapture: !!p.captured && p.to === prevTo,
       givesMate: p.san.endsWith('#'),
@@ -200,6 +206,7 @@ export function reviewGame(game: ParsedGame, evals: PositionEval[], opts: Review
     if (category !== 'book') bookStreak = false;
     else lastBookPly = p.ply;
     prev = category;
+    prevLoss = loss;
     const opponentCaptureTo = prevCaptureTo;
     prevCaptureTo = p.captured ? p.to : null;
     prevTo = p.to;
@@ -218,14 +225,7 @@ export function reviewGame(game: ParsedGame, evals: PositionEval[], opts: Review
       winBefore,
       winAfter,
       loss,
-      accuracy: moveAccuracy(
-        isBest
-          ? 0
-          : Math.max(
-              0,
-              winPercentFor(evalBefore, white, CONFIG.accuracy.winK) - winPercentFor(evalAfter, white, CONFIG.accuracy.winK),
-            ),
-      ),
+      accuracy: moveAccuracy(loss),
       category,
       isBest,
       bestMove,

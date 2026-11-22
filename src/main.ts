@@ -65,7 +65,7 @@ function rerenderChrome() {
   const item = (icon: Node, label: string, fn: () => void, extra = '') =>
     h('button', { class: `rail-item ${extra}`, title: label, 'aria-label': label, on: { click: fn } }, icon, h('span', { class: 'rail-label' }, label));
   rail.append(
-    h('button', { class: 'rail-brand', title: t('newGame'), on: { click: () => showInput() } }, svgFromString(BRAND_MARK), h('span', { class: 'rail-label' }, t('appName'))),
+    h('button', { class: 'rail-brand', title: t('newGame'), on: { click: () => showInput() } }, svgFromString(BRAND_MARK), h('span', { class: 'rail-label brand-word' }, 'Rook', h('span', { class: 'brand-line' }, 'line'))),
     item(uiIcon('plus', 22), t('newGameShort'), () => showInput(), screen === 'input' ? 'active' : ''),
     item(uiIcon('star', 22), t('gameReview'), () => undefined, screen === 'report' ? 'active' : 'disabled'),
     h('span', { class: 'rail-spacer' }),

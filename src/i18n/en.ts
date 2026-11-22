@@ -79,7 +79,7 @@ export const en: typeof ru = {
   openSettings: 'Open settings',
   llmError: 'Could not get an explanation: {msg}',
   pickMoveHint: 'Pick a move in the list or on the graph.',
-  gameRating: 'Game rating',
+  gameRating: 'Game Rating',
   gameRatingHint: 'Approximate: estimated from accuracy and the players\' ratings',
   phase_opening: 'Opening',
   phase_middlegame: 'Middlegame',
@@ -246,6 +246,8 @@ export const en: typeof ru = {
   ],
 
   gameReview: 'Game Review',
+  advancedStats: 'Advanced Stats',
+  showAllCats: 'Show all categories',
   startReview: 'Start Review',
   nextKey: 'Next',
   overview: 'Overview',

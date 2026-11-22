@@ -38,6 +38,10 @@ export interface ParsedGame {
   plies: PlyInfo[];
   /** FEN before each move plus the final position: length = plies.length + 1. */
   fens: string[];
+  /** Seconds left on the mover's clock after each ply ([%clk] comments), when the PGN has them. */
+  clocks?: number[];
+  /** Starting time in seconds (from TimeControl), when known. */
+  baseClock?: number;
   pgn: string;
 }
 
@@ -136,7 +140,19 @@ export function parseGame(pgnText: string): ParsedGame {
     };
   });
   const fens = [plies[0].fenBefore, ...plies.map((p) => p.fenAfter)];
-  return { headers, startFen: fens[0], plies, fens, pgn };
+  const clocks = readClocks(pgn, plies.length);
+  const base = Number(headers.timeControl?.split('+')[0]);
+  return { headers, startFen: fens[0], plies, fens, pgn, clocks, baseClock: base > 0 ? base : undefined };
+}
+
+/** One [%clk h:mm:ss] per move, in order; anything else (missing or extra clocks) means "no clocks". */
+export function readClocks(pgn: string, plies: number): number[] | undefined {
+  const moves = pgn.replace(/^\s*\[[^\]]*\]\s*$/gm, '');
+  const out: number[] = [];
+  for (const m of moves.matchAll(/\[%clk\s+(\d+):(\d{1,2}):(\d{1,2}(?:\.\d+)?)\]/g)) {
+    out.push(Number(m[1]) * 3600 + Number(m[2]) * 60 + Number(m[3]));
+  }
+  return out.length === plies ? out : undefined;
 }
 
 /** Lightweight summary of every game in a multi-game file (for a picker). */

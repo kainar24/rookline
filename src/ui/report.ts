@@ -1,15 +1,14 @@
 import { Chess, type Square } from 'chess.js';
 import { BAD_CATEGORIES, CATEGORIES, type Category, type GameReview, type MoveReview } from '../analysis/classify';
 import { CONFIG } from '../analysis/config';
-import { formatEval, winPercentWhite } from '../analysis/evalMath';
+import { formatEval, mateDistance, winPercentWhite } from '../analysis/evalMath';
 import { PHASES } from '../analysis/phases';
 import { materialBalance, playLine } from '../analysis/material';
 import { commentFor } from '../comments/templates';
 import { getLang, t, type Key } from '../i18n/i18n';
-import { formatTimeControl } from '../importers/importers';
 import { buildFacts, explainMove } from '../llm/claude';
 import type { ParsedGame } from '../pgn/pgn';
-import type { Settings } from '../settings';
+import { getMe, type Settings } from '../settings';
 import { Board } from './board';
 import { EvalChart } from './chart';
 import { clear, h } from './dom';
@@ -18,6 +17,17 @@ import { avatar, categoryIcon, uiIcon } from './icons';
 const catLabel = (c: Category) => t(`cat_${c}` as Key);
 
 /** Icon for a phase accuracy (thresholds in CONFIG.phases.icon). */
+function formatClock(sec: number): string {
+  const s = Math.max(0, sec);
+  const hh = Math.floor(s / 3600);
+  const mm = Math.floor((s % 3600) / 60);
+  const ss = Math.floor(s % 60);
+  const two = (n: number) => String(n).padStart(2, '0');
+  if (hh > 0) return `${hh}:${two(mm)}:${two(ss)}`;
+  if (s < 20) return `${mm}:${two(ss)}.${Math.floor((s * 10) % 10)}`;
+  return `${mm}:${two(ss)}`;
+}
+
 function phaseCategory(acc: number): Category {
   const t = CONFIG.phases.icon;
   if (acc >= t.best) return 'best';
@@ -60,6 +70,11 @@ export class ReportView {
   private llmAbort: AbortController | null = null;
   private keyPlies: number[];
   private keyHandler = (e: KeyboardEvent) => this.onKey(e);
+  /** Summary toggles: all ten categories, and the phase table. */
+  private showAllCats = false;
+  private showAdvanced = true;
+  /** The colour of the player who imported the game (their side goes to the bottom), if known. */
+  private me: 'w' | 'b' | null;
 
   constructor(
     private game: ParsedGame,
@@ -72,7 +87,13 @@ export class ReportView {
       this.goto(p);
     });
     this.keyPlies = this.computeKeyPlies();
+    const me = getMe().toLowerCase();
+    this.me = !me ? null : game.headers.white.toLowerCase() === me ? 'w' : game.headers.black.toLowerCase() === me ? 'b' : null;
     this.el = h('div', { class: 'report' });
+    if (this.me === 'b') {
+      this.board.setFlipped(true);
+      this.el.classList.add('flipped');
+    }
     this.build();
     document.addEventListener('keydown', this.keyHandler);
     this.goto(0);
@@ -115,7 +136,7 @@ export class ReportView {
     const panel = h(
       'aside',
       { class: 'panel' },
-      h('div', { class: 'panel-head' }, uiIcon('star', 22), h('span', null, t('gameReview'))),
+      h('div', { class: 'panel-head' }, h('span', { class: 'panel-head-icon' }, uiIcon('star', 16)), h('span', null, t('gameReview'))),
       this.panelBody,
       this.panelFoot,
     );
@@ -138,9 +159,22 @@ export class ReportView {
         h('div', { class: 'ps-name' }, h('strong', null, name), elo ? h('span', { class: 'ps-elo' }, ` (${elo})`) : null),
       );
       if (adv > 0) el.append(h('span', { class: 'ps-adv' }, `+${adv}`));
+      const left = this.clockAt(color);
+      if (left !== null) {
+        const toMove = this.game.fens[this.ply].split(' ')[1] === color;
+        el.append(h('div', { class: `ps-clock clock-${color}${toMove ? ' active' : ''}` }, formatClock(left)));
+      }
     };
     strip(this.topStrip, flipped ? 'w' : 'b');
     strip(this.bottomStrip, flipped ? 'b' : 'w');
+  }
+
+  /** Seconds left for `color` at the current ply: their clock after their last move so far. */
+  private clockAt(color: 'w' | 'b'): number | null {
+    const clocks = this.game.clocks;
+    if (!clocks) return null;
+    for (let i = this.ply - 1; i >= 0; i--) if (this.game.plies[i].color === color) return clocks[i];
+    return this.game.baseClock ?? null;
   }
 
   // ---------------------------------------------------------------- navigation
@@ -162,7 +196,8 @@ export class ReportView {
 
   private renderBoard() {
     const m = this.current();
-    const arrowUci = m && !m.isBest && m.bestMove ? m.bestMove : null;
+    // Book moves are theory: no "better move" arrow, like on the big sites.
+    const arrowUci = m && !m.isBest && m.category !== 'book' && m.bestMove ? m.bestMove : null;
     this.board.render({
       fen: this.game.fens[this.ply],
       lastMove: m ? { from: m.from, to: m.to } : null,
@@ -175,7 +210,9 @@ export class ReportView {
   private setEvalBar(ev: number) {
     const w = winPercentWhite(ev);
     this.evalFill.style.height = `${w}%`;
-    this.evalText.textContent = formatEval(ev).replace('+', '').replace('−', '-');
+    // Short form like the big sites: "0.7", "3.2", "M4" — the side is shown by where it sits.
+    const mate = mateDistance(ev);
+    this.evalText.textContent = mate !== null ? (mate === 0 ? (ev > 0 ? '1-0' : '0-1') : `M${mate}`) : (Math.abs(ev) / 100).toFixed(1);
     this.evalText.classList.toggle('on-white', w >= 50);
   }
 
@@ -233,69 +270,81 @@ export class ReportView {
   private renderSummary() {
     const r = this.review;
     const hd = this.game.headers;
-    const aw = r.accuracy.w ?? 0;
-    const ab = r.accuracy.b ?? 0;
-    const line =
-      Math.abs(aw - ab) < 1
-        ? t('coachSummaryEq')
-        : aw > ab
-          ? t('coachSummaryW', { a: aw.toFixed(1), b: ab.toFixed(1) })
-          : t('coachSummaryB', { a: ab.toFixed(1), b: aw.toFixed(1) });
-    this.panelBody.append(
-      this.bubble([
-        h('p', { class: 'bubble-text' }, `${line} ${t('coachKeyCount', { n: this.keyPlies.length })}`),
-        r.opening ? h('p', { class: 'sum-opening' }, r.opening) : null,
-      ]),
-      h('div', { class: 'panel-chart' }, this.chart.el),
-    );
-
-    const row = (label: string, w: Node | string, b: Node | string, cls = '') =>
+    const bottom: 'w' | 'b' = this.board.isFlipped() ? 'b' : 'w';
+    const row = (label: Node | string, w: Node | string, b: Node | string, cls = '') =>
       h('div', { class: `sum-row ${cls}` }, h('div', { class: 'sum-label' }, label), h('div', { class: 'sum-w' }, w), h('div', { class: 'sum-mid' }), h('div', { class: 'sum-b' }, b));
-    const playerCell = (color: 'w' | 'b') =>
-      h('div', { class: 'sum-player' }, avatar(color, 44), h('span', null, color === 'w' ? hd.white : hd.black));
+    const nameCell = (color: 'w' | 'b') => h('div', { class: 'sum-name', title: color === 'w' ? hd.white : hd.black }, color === 'w' ? hd.white : hd.black);
+    const avatarCell = (color: 'w' | 'b') =>
+      h('div', { class: `sum-avatar${color === (this.me ?? bottom) ? ' me' : ''}` }, avatar(color, 64));
     const accBox = (v: number | null, color: 'w' | 'b') => h('div', { class: `acc-box acc-${color}` }, v === null ? '—' : v.toFixed(1));
-
-    const ratingBox = (v: number | null) =>
-      h('div', { class: 'rating-box', title: t('gameRatingHint') }, v === null ? '—' : `≈${v}`);
+    const ratingBox = (v: number | null, color: 'w' | 'b') =>
+      h('div', { class: `acc-box acc-${color} rating-box`, title: t('gameRatingHint') }, v === null ? '—' : String(v));
     const phaseCell = (v: number | null) =>
       v === null
         ? h('div', { class: 'phase-cell muted' }, '—')
         : h(
             'div',
             { class: `phase-cell cat-text-${phaseCategory(v)}`, title: t('phaseHint', { a: v.toFixed(1) }) },
-            categoryIcon(phaseCategory(v), 22),
-            h('span', { class: 'phase-acc' }, v.toFixed(0)),
+            categoryIcon(phaseCategory(v), 26),
           );
+    const sep = () => h('div', { class: 'sum-sep' });
 
-    // Headline numbers first (accuracy, game rating, phases) so they are visible without scrolling.
     const table = h('div', { class: 'sum-table' });
     table.append(
-      row(t('players'), playerCell('w'), playerCell('b'), 'players'),
+      row('', nameCell('w'), nameCell('b'), 'names'),
+      row(t('players'), avatarCell('w'), avatarCell('b'), 'players'),
       row(t('accuracy'), accBox(r.accuracy.w, 'w'), accBox(r.accuracy.b, 'b'), 'acc'),
-      row(t('gameRating'), ratingBox(r.gameRating.w), ratingBox(r.gameRating.b), 'rating'),
+      sep(),
     );
-    for (const ph of PHASES) {
-      if (r.phases[ph].w === null && r.phases[ph].b === null) continue;
-      table.append(row(t(`phase_${ph}` as Key), phaseCell(r.phases[ph].w), phaseCell(r.phases[ph].b), 'phase'));
-    }
-    table.append(h('div', { class: 'sum-sep' }));
-    for (const c of CATEGORIES) {
+    // Like the big sites: the key categories first, the rest behind a chevron.
+    const shortList: Category[] = ['brilliant', 'great', 'best', 'excellent', 'mistake', 'miss', 'blunder'];
+    const cats = CATEGORIES.filter(
+      (c) => this.showAllCats || (shortList.includes(c) && (c !== 'brilliant' || r.counts.w[c] + r.counts.b[c] > 0)),
+    );
+    for (const c of cats) {
       table.append(
         h(
           'div',
           { class: `sum-row cat-row cat-text-${c}` },
           h('div', { class: 'sum-label' }, catLabel(c)),
           h('div', { class: 'sum-w num' }, String(r.counts.w[c])),
-          h('div', { class: 'sum-mid' }, categoryIcon(c, 24)),
+          h('div', { class: 'sum-mid' }, categoryIcon(c, 26)),
           h('div', { class: 'sum-b num' }, String(r.counts.b[c])),
         ),
       );
     }
-    const meta = [hd.result.replace('1/2-1/2', '½–½'), hd.date?.replace(/\./g, '-'), hd.timeControl ? formatTimeControl(hd.timeControl) : null]
-      .filter(Boolean)
-      .join(' · ');
-    this.panelBody.append(table, h('p', { class: 'sum-meta' }, meta));
-
+    table.append(
+      h(
+        'button',
+        {
+          class: `sum-chevron${this.showAllCats ? ' open' : ''}`,
+          'aria-label': t('showAllCats'),
+          'aria-expanded': String(this.showAllCats),
+          on: { click: () => ((this.showAllCats = !this.showAllCats), this.renderPanel()) },
+        },
+        uiIcon('chevron', 22),
+      ),
+      sep(),
+      row(t('gameRating'), ratingBox(r.gameRating.w, 'w'), ratingBox(r.gameRating.b, 'b'), 'rating'),
+      sep(),
+      h(
+        'button',
+        {
+          class: `sum-advanced${this.showAdvanced ? ' open' : ''}`,
+          'aria-expanded': String(this.showAdvanced),
+          on: { click: () => ((this.showAdvanced = !this.showAdvanced), this.renderPanel()) },
+        },
+        t('advancedStats'),
+      ),
+    );
+    if (this.showAdvanced) {
+      for (const ph of PHASES) {
+        if (r.phases[ph].w === null && r.phases[ph].b === null) continue;
+        table.append(row(t(`phase_${ph}` as Key), phaseCell(r.phases[ph].w), phaseCell(r.phases[ph].b), 'phase'));
+      }
+      if (r.opening) table.append(h('p', { class: 'sum-opening' }, r.opening));
+    }
+    this.panelBody.append(table);
     this.panelFoot.append(h('button', { class: 'btn btn-green btn-xl', on: { click: () => this.nextKey() } }, t('startReview')));
   }
 
@@ -315,13 +364,14 @@ export class ReportView {
         evChip,
       );
       const parts: (Node | null)[] = [head, h('p', { class: 'bubble-text' }, c.text)];
-      if (m.bestSan && !m.isBest) {
+      const hasBetter = !!m.bestSan && !m.isBest && m.category !== 'book';
+      if (hasBetter) {
         parts.push(h('p', { class: 'bubble-best' }, categoryIcon('best', 18), h('span', null, `${t('bestWas')}: `), h('strong', null, m.bestSan)));
       }
       if (this.retry) parts.push(h('p', { class: `retry-msg ${this.retry.feedback.kind}` }, this.retry.feedback.text));
 
       const actions = h('div', { class: 'bubble-actions' });
-      if (m.bestSan && !m.isBest) {
+      if (hasBetter) {
         actions.append(
           h('button', { class: 'btn btn-dark', on: { click: () => this.showBest(m) } }, uiIcon('bulb', 16), t('bestMoveBtn')),
           h('button', { class: 'btn btn-dark', on: { click: () => this.startRetry(m) } }, uiIcon('retry', 16), t('retry')),

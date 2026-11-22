@@ -24,5 +24,14 @@ describe('accuracy matches chess.com on a real game', () => {
     expect(r.moves.at(-1)!.category).toBe('best'); // 37...b6#
     expect(r.gameRating.b!).toBeGreaterThan(r.gameRating.w!);
     for (const ph of ['opening', 'middlegame', 'endgame'] as const) expect(r.phases[ph].w).not.toBeNull();
+    // chess.com's own report for this game: Mistake 6/1, Miss 1/1, Blunder 1/1, Game Rating 700/1250.
+    expect(r.counts.w.blunder).toBe(1);
+    expect(r.counts.b.blunder).toBe(1);
+    expect(r.counts.w.miss).toBe(1);
+    expect(r.counts.b.miss).toBe(1);
+    expect(r.counts.b.mistake).toBe(1);
+    expect(r.counts.w.mistake).toBeGreaterThanOrEqual(4);
+    expect(Math.abs(r.gameRating.w! - 700)).toBeLessThanOrEqual(150);
+    expect(Math.abs(r.gameRating.b! - 1250)).toBeLessThanOrEqual(150);
   }, 300_000);
 });

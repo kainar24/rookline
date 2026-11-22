@@ -59,3 +59,22 @@ export function effectiveTheme(pref: ThemePref): 'light' | 'dark' {
   if (pref !== 'system') return pref;
   return matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
 }
+
+const ME_KEY = 'rookline.me';
+
+/** Remember the username the player searched for, so their games open from their side. */
+export function rememberMe(name: string) {
+  try {
+    if (name) localStorage.setItem(ME_KEY, name);
+  } catch {
+    /* storage blocked: the board just opens from White's side */
+  }
+}
+
+export function getMe(): string {
+  try {
+    return localStorage.getItem(ME_KEY) ?? '';
+  } catch {
+    return '';
+  }
+}
